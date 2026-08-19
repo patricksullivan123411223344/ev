@@ -10,8 +10,8 @@ STOP_INSTANCES = [
 ]
 
 def main():
+    llm_instance = LLM()
     while True:
-        llm_instance = LLM()
         user_input = input("User: ")
 
         if user_input in STOP_INSTANCES:
@@ -19,7 +19,10 @@ def main():
             break
 
         llm_instance.receive_chat_input(user_input)
-        response = llm_instance.generate_response()
+        try:
+            response = llm_instance.handle_request()
+        except Exception as error:
+            response = f"I could not complete that request: {error}"
         print(f"LLM: {response}")
 
 if __name__ == "__main__":

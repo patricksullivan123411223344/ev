@@ -1,5 +1,6 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv, find_dotenv
 import psutil
 import os
@@ -31,6 +32,9 @@ class SPTSessionManager():
                 return d["id"]
         return None
 
+    def skip_track(self):
+        self.sp.next_track()
+
     def liked_track_play(self):
         results = self.sp.current_user_saved_tracks(limit=20)
         track_uris = [item['track']['uri'] for item in results['items']]
@@ -51,14 +55,32 @@ class SPTSessionManager():
             self.sp.start_playback(device_id=device_id, uris=[track_uri])
 
     def play_searched_song(self, track: str, artist: str) -> None:
+        self.refresh_devices()
         device_id = self.desktop_id
+        if device_id is None:
+            raise RuntimeError("No Spotify desktop playback device is available.")
+
         query = f"track:{track} artist:{artist}"
         search = self.sp.search(q=query, limit=1, type='track')
-        if search["tracks"]["items"][0]["uri"]:
-            track_uri = search["tracks"]["items"][0]["uri"]
-            self.sp.start_playback(device_id=device_id, uris=[track_uri])
+        items = search.get("tracks", {}).get("items", [])
+        if not items:
+            raise LookupError(f"Spotify could not find '{track}' by {artist}.")
+
+        track_uri = items[0].get("uri")
+        if not track_uri:
+            raise LookupError(f"Spotify returned no playable URI for '{track}'.")
+
+        self.sp.start_playback(device_id=device_id, uris=[track_uri])
+        return f"Playing '{track}' by {artist}."
+
+class PlaySearchedSongArgs(BaseModel):
+    track: str = Field(
+        description="Name of the song to play."
+    )
+    artist: str = Field(
+        description="Artist performing the song to play."
+    )
 
 if __name__ == "__main__":
     instance = SPTSessionManager()
-    instance.play_searched_song("Nothing like uuu", "Nettspend")
 
