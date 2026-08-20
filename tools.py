@@ -5,8 +5,6 @@ from typing import ClassVar, Literal
 class RouteDecision(BaseModel):
     domain: Literal[
         "spotify",
-        "system",
-        "research",
         "conversation"
     ] = Field(
         description="Select the capability domain to handle the user's request."
@@ -20,7 +18,11 @@ class RouteDecision(BaseModel):
 
 SPOTIFY_TOOLS = {
     "play_song": {
-        "description": "Play a specific Spotify song",
+        "description": (
+            "Choose and play a spotify song matching the user's request. "
+            "If the user specifies and exact song, use it. "
+            "If the request is broad, infer an appropriate track and artist relative to the request."
+        ),
         "args_model": PlaySearchedSongArgs,
         "function": "play_searched_song"
     }

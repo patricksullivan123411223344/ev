@@ -1,5 +1,4 @@
 import json
-
 from pydantic import BaseModel, Field
 from spotify import SPTSessionManager, PlaySearchedSongArgs
 from tools import SPOTIFY_TOOLS, RouteDecision
@@ -33,9 +32,13 @@ class LLM(BaseModel):
         
         system:
             Local computer and application control.
+
+        conversation:
+            Regular chatting back and fourth. Any question that does not require a tool calling.
         """
 
         response = client.chat(
+
             model=self.model,
             messages=[
                 {
@@ -123,6 +126,10 @@ class LLM(BaseModel):
 
     def handle_request(self) -> str:
         domain = self.choose_domain().domain
+
+        if domain == "conversation":
+            return self.generate_response()
+
         if domain not in self.tool_domains:
             return f"I cannot handle the {domain} capability yet."
 

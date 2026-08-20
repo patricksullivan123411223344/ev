@@ -75,10 +75,11 @@ class SPTSessionManager():
 
 class PlaySearchedSongArgs(BaseModel):
     track: str = Field(
-        description="Name of the song to play."
+        description="Name of the song to play. May be explicitly requested by the user "
+                    "or selected by the model when the user gives broader criteria."
     )
     artist: str = Field(
-        description="Artist performing the song to play."
+        description="Artist performing the song to play. Infer when necessary."
     )
 
 if __name__ == "__main__":
