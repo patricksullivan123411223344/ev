@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from spotify import SPTSessionManager
 from tools import SPOTIFY_TOOLS, RouteDecision
 from llm_state import ActionRecord, ChatHistory
+from typing import ClassVar
 import ollama 
 
 spotifyController = SPTSessionManager()
@@ -26,6 +27,10 @@ class Orchestrator(BaseModel):
     Be direct and honest. Challenge weak ideas when necessary, acknowledge uncertainty, and never fabricate completed actions or available capabilities. 
     """
 
+    controllers: ClassVar[dict[str, object]] = {
+        "spotify": spotifyController
+    }
+
     tool_domains: dict =  {
         "spotify": SPOTIFY_TOOLS
     }
@@ -34,15 +39,13 @@ class Orchestrator(BaseModel):
     chat_history: list[ChatHistory] = Field(default_factory=list)
     max_chat_messages: int = 20
     history_aware_domains: set = {"spotify"}
+
     def choose_domain(self) -> RouteDecision: 
         client = ollama.Client(host=self.host)
 
         domain_context = """
         spotify:
             Music playback and Spotify control.
-        
-        system:
-            Local computer and application control.
 
         conversation:
             Questions, discussion, explanations, brainstorming, and requests that do not require changing an external system.
@@ -60,14 +63,6 @@ class Orchestrator(BaseModel):
 
         Set needs_natural_response to false when a short execution confirmation is sufficient.
         Use the previous successful action only when the current request refers to it.
-
-        The completed action result below is authoritative.
-
-        Do not restate, paraphrase, reinterpret, replace, or contradict the completed
-        action. Do not name a different song, artist, tool, or result.
-
-        Respond only to the conversational portion of the user's message. If there is
-        nothing conversational to ad, return an empty repsonse. 
 
         Previous successful action:
         {self.get_last_action_context()}
@@ -100,10 +95,10 @@ class Orchestrator(BaseModel):
 
             for tool_name, tool in registry.items():
                 capabilities.append(
-                    f"- {tool_name}: {tool["description"]}"
+                    f"- {tool_name}: {tool['description']}"
                 )
 
-            return "\n".join(capabilities)
+        return "\n".join(capabilities)
 
     def get_tool_schemas(self, domain: str):
         registry = self.tool_domains[domain]
@@ -123,8 +118,8 @@ class Orchestrator(BaseModel):
     def choose_tool(self, domain: str):
         client = ollama.Client(host=self.host)
         tools = self.get_tool_schemas(domain)
-        messages= [
-                    { "role": "system", "content": self.sys_prompt},
+        messages = [
+            {"role": "system", "content": self.sys_prompt},
         ]
 
         if domain in self.history_aware_domains:
@@ -133,13 +128,15 @@ class Orchestrator(BaseModel):
                 for message in self.chat_history[-10:]
             )
 
+        messages.append({"role": "user", "content": self.llm_input})
+
         response = client.chat(
-            model=self.model, 
+            model=self.model,
             messages=messages,
             tools=tools,
             think=False
         )
-        return response 
+        return response
 
     def extract_tool_call(self, response):
         tool_calls = getattr(response.message, "tool_calls", None) or []
@@ -165,8 +162,12 @@ class Orchestrator(BaseModel):
         registry = self.tool_domains[domain]
         tool = registry[tool_name]
 
-        validated_args = tool["args_model"](**arguments) 
-        function = getattr(spotifyController, tool["function"])
+        validated_args = tool["args_model"](**arguments)
+        controller = self.controllers[domain]
+        function = getattr(
+            controller,
+            tool["function"]
+        )
 
         return function(
             **validated_args.model_dump()
@@ -215,12 +216,14 @@ class Orchestrator(BaseModel):
         )
 
         if route.needs_natural_response:
-            conversational_text = self.generate_response(
-                completed_action=completed_action,
-            )
+            try:
+                conversational_text = self.generate_response(
+                    completed_action=completed_action,
+                )
+            except Exception:
+                conversational_text = ""
             final_text = (
-                f"{completed_action}",
-                f"{conversational_text}"
+                f"{completed_action} {conversational_text}".strip()
             )
         else:
             final_text = completed_action
@@ -266,12 +269,15 @@ class Orchestrator(BaseModel):
                 response_context += f"""
         The user's requested action has already been completed successfully. 
 
-        Completed action result:
+        Authoritative completed action result:
         {completed_action}
 
-        Respond naturally to the user's entire message while briefly acknowledging 
-        the completed action. Do not attempt the action again. Do not say that you 
-        cannot perform it. 
+        Respond only to the separate conversational portion of the user's message.
+
+        Do not restate, paraphrase, reinterpret, replace, or contradict the completed 
+        action. Do not name a song, artist, tool, or result when discussing the action. 
+
+        If there is no separate conversational content to answer, return an empty string.
         """
 
         messages = [{

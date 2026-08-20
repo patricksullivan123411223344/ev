@@ -1,7 +1,6 @@
 from spotify import PlaySearchedSongArgs, VolumeControllerArgs
-from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-from typing import ClassVar, Literal, Any
+from typing import ClassVar, Literal
 
 class RouteDecision(BaseModel):
     domain: Literal[
@@ -25,9 +24,6 @@ class RouteDecision(BaseModel):
             "artists, playlists, queue, skipping, and playback."
         )
     }
-
-class ActionRecord(BaseModel):
-    user_input: str
 
 SPOTIFY_TOOLS = {
     "play_song": {
