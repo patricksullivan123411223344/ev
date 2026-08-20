@@ -1,4 +1,5 @@
 from orchestrator import Orchestrator
+from stt import STTClient
 
 STOP_INSTANCES = [
     "stop",
@@ -11,6 +12,9 @@ STOP_INSTANCES = [
 
 def main():
     main_llm_instance = Orchestrator()
+    stt_controller = STTClient("build/stt/ev_stt.exe")
+    stt_controller.start
+    
     while True:
         user_input = input("User: ")
 

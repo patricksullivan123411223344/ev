@@ -1,2 +1,15 @@
 # Env variables
 .env
+
+# Models
+/models 
+
+# Builds
+/build 
+
+# Caching
+/__pycache__
+.cache
+
+# Compiling
+*.pyc*
