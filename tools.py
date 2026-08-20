@@ -1,4 +1,4 @@
-from spotify import PlaySearchedSongArgs
+from spotify import PlaySearchedSongArgs, VolumeControllerArgs
 from pydantic import BaseModel, Field
 from typing import ClassVar, Literal
 
@@ -25,5 +25,14 @@ SPOTIFY_TOOLS = {
         ),
         "args_model": PlaySearchedSongArgs,
         "function": "play_searched_song"
+    },
+    "volume_controller": {
+        "description": (
+            "Turn the volume up or down based on an integer value based on user request "
+            "The user may ask an ambiguous amount, so judge as necessary "
+            "integer value represents the percent volume 0 through 100"
+        ),
+        "args_model": VolumeControllerArgs,
+        "function": "volume_controller"
     }
 }

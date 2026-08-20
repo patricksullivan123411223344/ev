@@ -1,6 +1,6 @@
 import json
 from pydantic import BaseModel, Field
-from spotify import SPTSessionManager, PlaySearchedSongArgs
+from spotify import SPTSessionManager
 from tools import SPOTIFY_TOOLS, RouteDecision
 import ollama 
 
@@ -34,7 +34,7 @@ class LLM(BaseModel):
             Local computer and application control.
 
         conversation:
-            Regular chatting back and fourth. Any question that does not require a tool calling.
+            Questions, discussion, explanations, brainstorming, and requests that do not require changing an external system.
         """
 
         response = client.chat(
@@ -79,18 +79,15 @@ class LLM(BaseModel):
     def choose_tool(self, domain: str):
         client = ollama.Client(host=self.host)
         tools = self.get_tool_schemas(domain)
+        messages= [
+                    { "role": "system", "content": self.sys_prompt},
+                    {"role": "user", "content": self.llm_input}
+        ]
         response = client.chat(
-            model=self.model, messages=[
-                {
-                    "role": "system",
-                    "content": self.sys_prompt
-                },
-                {
-                    "role": "user",
-                    "content": self.llm_input
-                }
-            ],
-            tools=tools
+            model=self.model, 
+            messages=messages,
+            tools=tools,
+            think=False
         )
         return response 
 
@@ -117,7 +114,8 @@ class LLM(BaseModel):
     ):
         registry = self.tool_domains[domain]
         tool = registry[tool_name]
-        validated_args = tool["args_model"](**arguments)
+
+        validated_args = tool["args_model"](**arguments) 
         function = getattr(spotifyController, tool["function"])
 
         return function(
@@ -151,8 +149,6 @@ class LLM(BaseModel):
         response = client.generate(model = self.model,
                                    prompt = self.llm_input,
                                    system=self.sys_prompt,
-                                   options={
-                                       "think": False
-                                   })
-        
+                                   think=False
+                                )
         return response["response"]

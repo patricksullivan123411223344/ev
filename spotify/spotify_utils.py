@@ -35,7 +35,13 @@ class SPTSessionManager():
     def skip_track(self):
         self.sp.next_track()
 
-    def liked_track_play(self):
+    def volume_controller(self, volume: int):
+        device_id = self.desktop_id
+        if device_id is None:
+            raise RuntimeError("No Spotify playback device is available.")
+        self.sp.volume(volume_percent=volume, device_id=device_id)
+
+    def play_liked_tracks(self):
         results = self.sp.current_user_saved_tracks(limit=20)
         track_uris = [item['track']['uri'] for item in results['items']]
         if track_uris:
@@ -80,6 +86,12 @@ class PlaySearchedSongArgs(BaseModel):
     )
     artist: str = Field(
         description="Artist performing the song to play. Infer when necessary."
+    )
+
+class VolumeControllerArgs(BaseModel):
+    volume: int = Field(
+        description="Integer relating to the volume percentage ranging from 0 to 100"
+                    "Gets louder by increasing percentage amount, lower by lowering percentage amount"
     )
 
 if __name__ == "__main__":

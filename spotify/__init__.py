@@ -1,3 +1,3 @@
-from spotify.spotify_utils import SPTSessionManager, PlaySearchedSongArgs
+from spotify.spotify_utils import SPTSessionManager, PlaySearchedSongArgs, VolumeControllerArgs
 
-__all__ = ['SPTSessionManager', 'PlaySearchedSongArgs']
+__all__ = ['SPTSessionManager', 'PlaySearchedSongArgs', 'VolumeControllerArgs']
