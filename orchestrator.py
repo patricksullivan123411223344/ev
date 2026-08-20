@@ -59,7 +59,15 @@ class Orchestrator(BaseModel):
         be acknowledged after the action completes.
 
         Set needs_natural_response to false when a short execution confirmation is sufficient.
-        Use the previous successful action only when the current request refers to it. 
+        Use the previous successful action only when the current request refers to it.
+
+        The completed action result below is authoritative.
+
+        Do not restate, paraphrase, reinterpret, replace, or contradict the completed
+        action. Do not name a different song, artist, tool, or result.
+
+        Respond only to the conversational portion of the user's message. If there is
+        nothing conversational to ad, return an empty repsonse. 
 
         Previous successful action:
         {self.get_last_action_context()}
@@ -202,16 +210,20 @@ class Orchestrator(BaseModel):
             result=str(result) if result is not None else None,
         )
 
-        action_result = str(
+        completed_action = str(
             result or f"Completed {tool_name}"
         )
 
         if route.needs_natural_response:
-            final_text = self.generate_response(
-                action_result=action_result
+            conversational_text = self.generate_response(
+                completed_action=completed_action,
+            )
+            final_text = (
+                f"{completed_action}",
+                f"{conversational_text}"
             )
         else:
-            final_text = action_result
+            final_text = completed_action
 
         self.store_chat_message("assistant", final_text)
         return final_text
@@ -233,7 +245,7 @@ class Orchestrator(BaseModel):
 
     def generate_response(
             self, 
-            action_result: str | None = None,
+            completed_action: str | None = None,
     ):
         client = ollama.Client(host=self.host)
 
@@ -250,12 +262,12 @@ class Orchestrator(BaseModel):
         is provided below
         """
 
-        if action_result is not None:
+        if completed_action is not None:
                 response_context += f"""
         The user's requested action has already been completed successfully. 
 
         Completed action result:
-        {action_result}
+        {completed_action}
 
         Respond naturally to the user's entire message while briefly acknowledging 
         the completed action. Do not attempt the action again. Do not say that you 
