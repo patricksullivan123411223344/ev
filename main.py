@@ -1,4 +1,4 @@
-from llm import LLM
+from orchestrator import Orchestrator
 
 STOP_INSTANCES = [
     "stop",
@@ -10,7 +10,7 @@ STOP_INSTANCES = [
 ]
 
 def main():
-    llm_instance = LLM()
+    main_llm_instance = Orchestrator()
     while True:
         user_input = input("User: ")
 
@@ -18,9 +18,9 @@ def main():
             print("LLM: Goodbye!")
             break
 
-        llm_instance.receive_chat_input(user_input)
+        main_llm_instance.receive_chat_input(user_input)
         try:
-            response = llm_instance.handle_request()
+            response = main_llm_instance.handle_request()
         except Exception as error:
             response = f"I could not complete that request: {error}"
         print(f"LLM: {response}")

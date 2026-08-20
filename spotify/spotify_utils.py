@@ -35,6 +35,19 @@ class SPTSessionManager():
     def skip_track(self):
         self.sp.next_track()
 
+    def que_songs(self, songs: list[str]):
+        device_id = self.desktop_id
+        if device_id is None:
+            raise RuntimeError("No spotify device is available.")
+
+        success_count = 0
+        for track in songs:
+            try:
+                self.sp.add_to_que(track_id=track, device_id=device_id)
+                success_count += 1
+            except spotipy.exceptions.SpotifyException as e:
+                print(f"Error adding {track} to queue: {e}")
+
     def volume_controller(self, volume: int):
         device_id = self.desktop_id
         if device_id is None:

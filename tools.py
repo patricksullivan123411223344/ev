@@ -1,6 +1,7 @@
 from spotify import PlaySearchedSongArgs, VolumeControllerArgs
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Any
 
 class RouteDecision(BaseModel):
     domain: Literal[
@@ -16,6 +17,9 @@ class RouteDecision(BaseModel):
         )
     }
 
+class ActionRecord(BaseModel):
+    user_input: str
+
 SPOTIFY_TOOLS = {
     "play_song": {
         "description": (
@@ -24,7 +28,8 @@ SPOTIFY_TOOLS = {
             "If the request is broad, infer an appropriate track and artist relative to the request."
         ),
         "args_model": PlaySearchedSongArgs,
-        "function": "play_searched_song"
+        "function": "play_searched_song",
+        "uses_chat_history": True
     },
     "volume_controller": {
         "description": (
@@ -33,6 +38,7 @@ SPOTIFY_TOOLS = {
             "integer value represents the percent volume 0 through 100"
         ),
         "args_model": VolumeControllerArgs,
-        "function": "volume_controller"
+        "function": "volume_controller",
+        "uses_chat_history": False
     }
 }

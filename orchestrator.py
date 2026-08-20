@@ -2,11 +2,12 @@ import json
 from pydantic import BaseModel, Field
 from spotify import SPTSessionManager
 from tools import SPOTIFY_TOOLS, RouteDecision
+from llm_state import ActionRecord, ChatHistory
 import ollama 
 
 spotifyController = SPTSessionManager()
 
-class LLM(BaseModel):
+class Orchestrator(BaseModel):
     model: str = Field(default="qwen3:8b", description="The model to use for the LLM")
     llm_input: str = Field(default="", min_length=1, description="The input text for the LLM from various input methods")
     host: str = Field(default="http://localhost:11434", description="The host URL for the LLM")
@@ -29,6 +30,10 @@ class LLM(BaseModel):
         "spotify": SPOTIFY_TOOLS
     }
 
+    last_action: ActionRecord | None = None
+    chat_history: list[ChatHistory] = Field(default_factory=list)
+    max_chat_messages: int = 20
+    history_aware_domains: set = {"spotify"}
     def choose_domain(self) -> RouteDecision: 
         client = ollama.Client(host=self.host)
 
@@ -51,6 +56,9 @@ class LLM(BaseModel):
                         "Classify the users request into exactly one "
                         "available capability domain. \n\n"
                         f"{domain_context}"
+                        "Use the previous successful action only "
+                        "when the current request clearly refers to it. \n"
+                        f"Previous action: {self.get_last_action_context()}"
                     )
                 },
                 {
@@ -85,8 +93,15 @@ class LLM(BaseModel):
         tools = self.get_tool_schemas(domain)
         messages= [
                     { "role": "system", "content": self.sys_prompt},
-                    {"role": "user", "content": self.llm_input}
         ]
+
+        if domain in self.history_aware_domains:
+            messages.extend(
+                message.model_dump()
+                for message in self.chat_history[-10:]
+            )
+
+        messages.append({"role": "user", "content": self.llm_input},)
         response = client.chat(
             model=self.model, 
             messages=messages,
@@ -127,10 +142,14 @@ class LLM(BaseModel):
         )
 
     def handle_request(self) -> str:
+        self.store_chat_message("user", self.llm_input)
+
         domain = self.choose_domain().domain
 
         if domain == "conversation":
-            return self.generate_response()
+            response_text = self.generate_response()
+            self.store_chat_message("assistant", response_text)
+            return response_text
 
         if domain not in self.tool_domains:
             return f"I cannot handle the {domain} capability yet."
@@ -138,21 +157,52 @@ class LLM(BaseModel):
         response = self.choose_tool(domain)
         tool_call = self.extract_tool_call(response)
         if tool_call is None:
-            return response.message.content or "I could not determine an action for that request."
+            final_text = response.message.content or "I could not determine an action for that request."
+            self.store_chat_message("assistant", final_text)
+            return final_text
 
         tool_name, arguments = tool_call
         result = self.execute_tool(domain, tool_name, arguments)
-        return str(result or f"Completed {tool_name}.")
+        self.last_action = ActionRecord(
+            user_input=self.llm_input,
+            domain=domain,
+            tool_name=tool_name,
+            arguments=arguments,
+            result=str(result) if result is not None else None,
+        )
+
+        final_text = str(result or f"Completed {tool_name}.")
+        self.store_chat_message("assistant", final_text)
+        return final_text
+
+    def get_last_action_context(self) -> str:
+        if self.last_action is None:
+            return "No previous tool action is available."
+
+        return self.last_action.model_dump_json()
+
+    def store_chat_message(self, role: str, content: str) -> None:
+        self.chat_history.append(
+            ChatHistory(role=role, content=content)
+        )
+        self.chat_history = self.chat_history[-self.max_chat_messages:]
 
     def receive_chat_input(self, input_text: str) -> None:
         self.llm_input = input_text
 
     def generate_response(self) -> str:
         client = ollama.Client(host=self.host)
-
-        response = client.generate(model = self.model,
-                                   prompt = self.llm_input,
-                                   system=self.sys_prompt,
-                                   think=False
-                                )
-        return response["response"]
+        messages = [
+            {"role": "system", "content": self.sys_prompt},
+            *[
+                message.model_dump()
+                for message in self.chat_history
+            ],
+            {"role": "user", "content": self.llm_input}
+        ]
+        response = client.chat(
+            model=self.model,
+            messages=messages,
+            think=False
+        )
+        return response.message.content
