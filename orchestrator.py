@@ -47,19 +47,30 @@ class Orchestrator(BaseModel):
         conversation:
             Questions, discussion, explanations, brainstorming, and requests that do not require changing an external system.
         """
+
+        router_prompt = f"""
+        Classify the user's request into exactly one available capability domain:
+        {domain_context}
+
+        If the message contains both casual conversation and an executable request,
+        prioritize the executable request and select its tool domain.
+
+        Set needs_natural_response to true when the message also contains humor, commentary, a question, orcongerstaional context that should
+        be acknowledged after the action completes.
+
+        Set needs_natural_response to false when a short execution confirmation is sufficient.
+        Use the previous successful action only when the current request refers to it. 
+
+        Previous successful action:
+        {self.get_last_action_context()}
+        """
+
         response = client.chat(
             model=self.model,
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "Classify the users request into exactly one "
-                        "available capability domain. \n\n"
-                        f"{domain_context}"
-                        "Use the previous successful action only "
-                        "when the current request clearly refers to it. \n"
-                        f"Previous action: {self.get_last_action_context()}"
-                    )
+                    "content": router_prompt
                 },
                 {
                     "role": "user",
@@ -72,6 +83,19 @@ class Orchestrator(BaseModel):
         return RouteDecision.model_validate_json(
             response.message.content
         )
+
+    def get_capabilities_context(self):
+        capabilities = []
+
+        for domain, registry in self.tool_domains.items():
+            capabilities.append(f"{domain}:")
+
+            for tool_name, tool in registry.items():
+                capabilities.append(
+                    f"- {tool_name}: {tool["description"]}"
+                )
+
+            return "\n".join(capabilities)
 
     def get_tool_schemas(self, domain: str):
         registry = self.tool_domains[domain]
@@ -101,7 +125,6 @@ class Orchestrator(BaseModel):
                 for message in self.chat_history[-10:]
             )
 
-        messages.append({"role": "user", "content": self.llm_input},)
         response = client.chat(
             model=self.model, 
             messages=messages,
@@ -143,8 +166,8 @@ class Orchestrator(BaseModel):
 
     def handle_request(self) -> str:
         self.store_chat_message("user", self.llm_input)
-
-        domain = self.choose_domain().domain
+        route = self.choose_domain()
+        domain = route.domain
 
         if domain == "conversation":
             response_text = self.generate_response()
@@ -152,17 +175,25 @@ class Orchestrator(BaseModel):
             return response_text
 
         if domain not in self.tool_domains:
-            return f"I cannot handle the {domain} capability yet."
+            response_text = f"I cannot handle the {domain} capability yet."
+            self.store_chat_message("assistant", response_text)
+            return response_text
 
         response = self.choose_tool(domain)
         tool_call = self.extract_tool_call(response)
+
         if tool_call is None:
-            final_text = response.message.content or "I could not determine an action for that request."
-            self.store_chat_message("assistant", final_text)
-            return final_text
+            response_text = (
+                response.message.content 
+                or "I could not determine an action for that request."
+            )
+            self.store_chat_message("assistant", response_text)
+            return response_text
 
         tool_name, arguments = tool_call
+
         result = self.execute_tool(domain, tool_name, arguments)
+
         self.last_action = ActionRecord(
             user_input=self.llm_input,
             domain=domain,
@@ -171,7 +202,17 @@ class Orchestrator(BaseModel):
             result=str(result) if result is not None else None,
         )
 
-        final_text = str(result or f"Completed {tool_name}.")
+        action_result = str(
+            result or f"Completed {tool_name}"
+        )
+
+        if route.needs_natural_response:
+            final_text = self.generate_response(
+                action_result=action_result
+            )
+        else:
+            final_text = action_result
+
         self.store_chat_message("assistant", final_text)
         return final_text
 
@@ -190,19 +231,51 @@ class Orchestrator(BaseModel):
     def receive_chat_input(self, input_text: str) -> None:
         self.llm_input = input_text
 
-    def generate_response(self) -> str:
+    def generate_response(
+            self, 
+            action_result: str | None = None,
+    ):
         client = ollama.Client(host=self.host)
-        messages = [
-            {"role": "system", "content": self.sys_prompt},
+
+        response_context = f"""
+        {self.sys_prompt}
+
+        EV currently has these executable capabilities:
+        {self.get_capabilities_context()}
+
+        You are the conversational voice of the full EV system.
+        The orchestrator executes tools and Patricks behalf.
+        Never claim EV lacks a capability listed above.
+        Never claim an action was completed unless a completed action result 
+        is provided below
+        """
+
+        if action_result is not None:
+                response_context += f"""
+        The user's requested action has already been completed successfully. 
+
+        Completed action result:
+        {action_result}
+
+        Respond naturally to the user's entire message while briefly acknowledging 
+        the completed action. Do not attempt the action again. Do not say that you 
+        cannot perform it. 
+        """
+
+        messages = [{
+            "role": "system",
+            "content": response_context,
+            },
             *[
                 message.model_dump()
                 for message in self.chat_history
             ],
-            {"role": "user", "content": self.llm_input}
         ]
+
         response = client.chat(
             model=self.model,
             messages=messages,
             think=False
         )
+
         return response.message.content

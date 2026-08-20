@@ -10,6 +10,15 @@ class RouteDecision(BaseModel):
     ] = Field(
         description="Select the capability domain to handle the user's request."
     )
+
+    needs_natural_response: bool = Field(
+        description=(
+            "True when the request contains conversation, humor, commentary, etc. "
+            "or when a question is in addition to an executable command. "
+            "False for a direct command requiring only confirmation."
+        )
+    )
+
     DOMAIN_DESCRIPTIONS: ClassVar[dict[str, str]] = {
         "spotify": (
             "Spotify music playback and control, including songs, "
