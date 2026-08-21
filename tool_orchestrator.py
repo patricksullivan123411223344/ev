@@ -2,7 +2,7 @@ import json
 from pydantic import BaseModel, Field
 from spotify import SPTSessionManager
 from tools import RouteDecision, ToolDefinition, build_spotify_tools
-from llm_state import ActionRecord, ChatHistory
+from llm_state import ActionRecord, ConversationMemory
 import ollama 
 
 class ToolCallError(ValueError):
@@ -35,7 +35,7 @@ class Orchestrator(BaseModel):
     )
 
     last_action: ActionRecord | None = None
-    chat_history: list[ChatHistory] = Field(default_factory=list)
+    chat_history: list[ConversationMemory] = Field(default_factory=list)
     max_chat_messages: int = 20
     history_aware_domains: set = {"spotify"}
 
@@ -288,7 +288,7 @@ class Orchestrator(BaseModel):
 
     def store_chat_message(self, role: str, content: str) -> None:
         self.chat_history.append(
-            ChatHistory(role=role, content=content)
+            ConversationMemory(role=role, content=content)
         )
         self.chat_history = self.chat_history[-self.max_chat_messages:]
 

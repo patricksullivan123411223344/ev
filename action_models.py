@@ -14,7 +14,7 @@ class ActionKernel:
             tool_name: str,
             arguments: dict
     ) -> ActionOutcome:
-        tool = self.tool_registry.get(domain, tool_name)
+        tool = self.tool_registry[domain][tool_name]
         validated = tool.args_model.model_validate(arguments)
         outcome = tool.handler(**validated.model_dump())
 
