@@ -18,11 +18,11 @@ class RouteDecision(BaseModel):
         description="Select the capability domain to handle the user's request."
     )
 
-    needs_natural_response: bool = Field(
+    has_separate_conversation: bool = Field(
         description=(
-            "True when the request contains conversation, humor, commentary, etc. "
-            "or when a question is in addition to an executable command. "
-            "False for a direct command requiring only confirmation."
+            "True only when the user's message contains a separate question, comment, "
+            "or conversational request in addition to an executable command. "
+            "False for direct commands, including casual commands such as 'shuffle my playlist'."
         )
     )
 

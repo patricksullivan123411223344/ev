@@ -76,10 +76,12 @@ class Orchestrator(BaseModel):
         If the message contains both casual conversation and an executable request,
         prioritize the executable request and select its tool domain.
 
-        Set needs_natural_response to true when the message also contains humor, commentary, a question, orcongerstaional context that should
-        be acknowledged after the action completes.
+        Set has_separate_conversation to true only when the message contains a separate
+        question, comment, or conversational request in addition to the action.
+        Examples: 'shuffle my playlist and tell me if it is good for workouts' is true.
+        'shuffle my playlist', 'turn it up', and 'play Drake' are false.
 
-        Set needs_natural_response to false when a short execution confirmation is sufficient.
+        Set has_separate_conversation to false when a short execution confirmation is sufficient.
         Use the previous successful action only when the current request refers to it.
 
         Previous successful action:
@@ -263,15 +265,16 @@ class Orchestrator(BaseModel):
             result or f"Completed {tool_name}"
         )
 
-        if route.needs_natural_response:
+        if route.has_separate_conversation:
             try:
                 conversational_text = self.generate_response(
                     completed_action=completed_action,
                 )
             except Exception:
                 conversational_text = ""
-            final_text = (
-                f"{completed_action} {conversational_text}".strip()
+            conversational_text = conversational_text.strip()
+            final_text = " ".join(
+                part for part in (completed_action, conversational_text) if part
             )
         else:
             final_text = completed_action

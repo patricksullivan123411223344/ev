@@ -8,8 +8,11 @@
 /build 
 
 # Caching
-/__pycache__
-.cache
+__pycache__/
+*.py[cod]
+/.cache
+/spotify/.cache
+**/.cache
 
 # Compiling
 *.pyc*
