@@ -6,7 +6,7 @@ from .models import TranscriptEvent
 class STTClient:
     def __init__(self, executable: str):
         self.executable = executable
-        self.process = subprocess.Popen | None = None
+        self.process: subprocess.Popen | None = None
 
     def start(self):
         self.process = subprocess.Popen(

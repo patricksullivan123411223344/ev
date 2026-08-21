@@ -11,7 +11,7 @@ spotifyController = SPTSessionManager()
 class Orchestrator(BaseModel):
     model: str = Field(default="qwen3:8b", description="The model to use for the LLM")
     llm_input: str = Field(default="", min_length=1, description="The input text for the LLM from various input methods")
-    host: str = Field(default="http://localhost:11434", description="The host URL for the LLM")
+    host: str = Field(default="http://127.0.0.1:11434", description="The host URL for the LLM")
 
     sys_prompt: str = """
     You are EV, Patrick's personal local AI assistant.
@@ -109,11 +109,18 @@ class Orchestrator(BaseModel):
                 "function": {
                     "name": name,
                     "description": tool["description"],
-                    "parameters": tool["args_model"].model_json_schema()
+                    "parameters": self._get_args_model(tool).model_json_schema()
                 }
             }
             for name, tool in registry.items()
         ]
+
+    @staticmethod
+    def _get_args_model(tool: dict) -> type[BaseModel]:
+        args_model = tool.get("args_model")
+        if not isinstance(args_model, type) or not issubclass(args_model, BaseModel):
+            raise TypeError("Tool args_model must be a Pydantic model class.")
+        return args_model
 
     def choose_tool(self, domain: str):
         client = ollama.Client(host=self.host)
@@ -160,9 +167,12 @@ class Orchestrator(BaseModel):
             arguments: dict
     ):
         registry = self.tool_domains[domain]
+        if tool_name not in registry:
+            raise LookupError(f"Unknown {domain} tool: {tool_name}")
+
         tool = registry[tool_name]
 
-        validated_args = tool["args_model"](**arguments)
+        validated_args = self._get_args_model(tool)(**arguments)
         controller = self.controllers[domain]
         function = getattr(
             controller,

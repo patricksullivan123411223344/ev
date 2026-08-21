@@ -73,6 +73,31 @@ class SPTSessionManager():
             track_uri = search["tracks"]["items"][0]["uri"]
             self.sp.start_playback(device_id=device_id, uris=[track_uri])
 
+    def shuffle_playlist(self, playlist_name: str) -> str:
+        self.refresh_devices()
+        device_id = self.desktop_id
+        if device_id is None:
+            raise RuntimeError("No Spotify desktop playback device is available.")
+
+        playlists = self.sp.current_user_playlists(limit=50).get("items", [])
+        playlist = next(
+            (
+                item for item in playlists
+                if item.get("name", "").casefold() == playlist_name.casefold()
+            ),
+            None,
+        )
+        if playlist is None:
+            raise LookupError(f"Spotify could not find a playlist named '{playlist_name}'.")
+
+        playlist_uri = playlist.get("uri")
+        if not playlist_uri:
+            raise LookupError(f"Spotify returned no playable URI for '{playlist_name}'.")
+
+        self.sp.shuffle(state=True, device_id=device_id)
+        self.sp.start_playback(device_id=device_id, context_uri=playlist_uri)
+        return f"Playing shuffled playlist '{playlist_name}'."
+
     def play_searched_song(self, track: str, artist: str) -> None:
         self.refresh_devices()
         device_id = self.desktop_id
@@ -92,6 +117,12 @@ class SPTSessionManager():
         self.sp.start_playback(device_id=device_id, uris=[track_uri])
         return f"Playing '{track}' by {artist}."
 
+    def fetch_playlist_id(self):
+        results = self.sp.current_user_playlists(limit=20)
+
+        for playlist in results ['items']:
+            print(f"Name: {playlist["name"]} -> ID: {playlist["id"]}")
+
 class PlaySearchedSongArgs(BaseModel):
     track: str = Field(
         description="Name of the song to play. May be explicitly requested by the user "
@@ -107,6 +138,11 @@ class VolumeControllerArgs(BaseModel):
                     "Gets louder by increasing percentage amount, lower by lowering percentage amount"
     )
 
+class PlayShuffledPlaylistArgs(BaseModel):
+    playlist_name: str = Field(
+        description="Name of the Spotify playlist to shuffle and play. Follow the users commanded name"
+    )
+
 if __name__ == "__main__":
     instance = SPTSessionManager()
-
+    instance.fetch_playlist_id()

@@ -1,4 +1,4 @@
-from spotify import PlaySearchedSongArgs, VolumeControllerArgs
+from spotify import PlaySearchedSongArgs, VolumeControllerArgs, PlayShuffledPlaylistArgs
 from pydantic import BaseModel, Field
 from typing import ClassVar, Literal
 
@@ -44,6 +44,15 @@ SPOTIFY_TOOLS = {
         ),
         "args_model": VolumeControllerArgs,
         "function": "volume_controller",
-        "uses_chat_history": False
+        "uses_chat_history": True
+    },
+    "shuffle_playlist": {
+        "description": (
+            "Shuffle and play the user's Spotify playlist. Provide the playlist name exactly "
+            "or approximately as requested by the user."
+        ),
+        "args_model": PlayShuffledPlaylistArgs,
+        "function": "shuffle_playlist",
+        "uses_chat_history": True
     }
 }
