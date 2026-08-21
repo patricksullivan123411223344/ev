@@ -1,6 +1,6 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from dotenv import load_dotenv, find_dotenv
 import psutil
 import os
@@ -123,7 +123,11 @@ class SPTSessionManager():
         for playlist in results ['items']:
             print(f"Name: {playlist["name"]} -> ID: {playlist["id"]}")
 
-class PlaySearchedSongArgs(BaseModel):
+class ToolArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PlaySearchedSongArgs(ToolArgs):
     track: str = Field(
         description="Name of the song to play. May be explicitly requested by the user "
                     "or selected by the model when the user gives broader criteria."
@@ -132,14 +136,17 @@ class PlaySearchedSongArgs(BaseModel):
         description="Artist performing the song to play. Infer when necessary."
     )
 
-class VolumeControllerArgs(BaseModel):
+class VolumeControllerArgs(ToolArgs):
     volume: int = Field(
+        ge=0,
+        le=100,
         description="Integer relating to the volume percentage ranging from 0 to 100"
                     "Gets louder by increasing percentage amount, lower by lowering percentage amount"
     )
 
-class PlayShuffledPlaylistArgs(BaseModel):
+class PlayShuffledPlaylistArgs(ToolArgs):
     playlist_name: str = Field(
+        min_length=1,
         description="Name of the Spotify playlist to shuffle and play. Follow the users commanded name"
     )
 

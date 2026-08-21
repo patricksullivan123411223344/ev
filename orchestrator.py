@@ -1,12 +1,14 @@
 import json
 from pydantic import BaseModel, Field
 from spotify import SPTSessionManager
-from tools import SPOTIFY_TOOLS, RouteDecision
+from tools import RouteDecision, ToolDefinition, build_spotify_tools
 from llm_state import ActionRecord, ChatHistory
-from typing import ClassVar
 import ollama 
 
-spotifyController = SPTSessionManager()
+
+class ToolCallError(ValueError):
+    pass
+
 
 class Orchestrator(BaseModel):
     model: str = Field(default="qwen3:8b", description="The model to use for the LLM")
@@ -27,18 +29,34 @@ class Orchestrator(BaseModel):
     Be direct and honest. Challenge weak ideas when necessary, acknowledge uncertainty, and never fabricate completed actions or available capabilities. 
     """
 
-    controllers: ClassVar[dict[str, object]] = {
-        "spotify": spotifyController
-    }
-
-    tool_domains: dict =  {
-        "spotify": SPOTIFY_TOOLS
-    }
+    controllers: dict[str, object] = Field(
+        default_factory=lambda: {"spotify": SPTSessionManager()}
+    )
+    tool_domains: dict[str, dict[str, ToolDefinition]] = Field(
+        default_factory=dict
+    )
 
     last_action: ActionRecord | None = None
     chat_history: list[ChatHistory] = Field(default_factory=list)
     max_chat_messages: int = 20
     history_aware_domains: set = {"spotify"}
+
+    def model_post_init(self, __context: object) -> None:
+        if not self.tool_domains:
+            self.tool_domains = {
+                "spotify": build_spotify_tools(self.controllers["spotify"])
+            }
+        self.validate_tool_domains()
+
+    def validate_tool_domains(self) -> None:
+        for domain, registry in self.tool_domains.items():
+            for name, tool in registry.items():
+                if name != tool.name:
+                    raise ValueError(
+                        f"Tool registry key '{name}' does not match '{tool.name}'."
+                    )
+                if not callable(tool.handler):
+                    raise TypeError(f"Handler for {domain}.{name} is not callable.")
 
     def choose_domain(self) -> RouteDecision: 
         client = ollama.Client(host=self.host)
@@ -95,32 +113,25 @@ class Orchestrator(BaseModel):
 
             for tool_name, tool in registry.items():
                 capabilities.append(
-                    f"- {tool_name}: {tool['description']}"
+                    f"- {tool_name}: {tool.description}"
                 )
 
         return "\n".join(capabilities)
 
     def get_tool_schemas(self, domain: str):
-        registry = self.tool_domains[domain]
+        registry = self._get_tool_registry(domain)
 
         return [
             {
                 "type": "function",
                 "function": {
                     "name": name,
-                    "description": tool["description"],
-                    "parameters": self._get_args_model(tool).model_json_schema()
+                    "description": tool.description,
+                    "parameters": tool.args_model.model_json_schema()
                 }
             }
             for name, tool in registry.items()
         ]
-
-    @staticmethod
-    def _get_args_model(tool: dict) -> type[BaseModel]:
-        args_model = tool.get("args_model")
-        if not isinstance(args_model, type) or not issubclass(args_model, BaseModel):
-            raise TypeError("Tool args_model must be a Pydantic model class.")
-        return args_model
 
     def choose_tool(self, domain: str):
         client = ollama.Client(host=self.host)
@@ -145,19 +156,46 @@ class Orchestrator(BaseModel):
         )
         return response
 
+    def _get_tool_registry(self, domain: str) -> dict[str, ToolDefinition]:
+        if domain not in self.tool_domains:
+            raise LookupError(f"Unknown tool domain: {domain}")
+        return self.tool_domains[domain]
+
+    def _get_tool(self, domain: str, tool_name: str) -> ToolDefinition:
+        registry = self._get_tool_registry(domain)
+        if tool_name not in registry:
+            raise LookupError(f"Unknown {domain} tool: {tool_name}")
+        return registry[tool_name]
+
+    def _validate_tool_arguments(
+        self,
+        domain: str,
+        tool_name: str,
+        arguments: dict,
+    ) -> dict:
+        tool = self._get_tool(domain, tool_name)
+        return tool.args_model.model_validate(arguments).model_dump()
+
     def extract_tool_call(self, response):
         tool_calls = getattr(response.message, "tool_calls", None) or []
         if not tool_calls:
             return None
+        if len(tool_calls) > 1:
+            raise ToolCallError("Multiple tool calls are not supported yet.")
 
         tool_call = tool_calls[0]
         function = tool_call.function
         name = function.name
         arguments = function.arguments
         if isinstance(arguments, str):
-            arguments = json.loads(arguments)
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError as error:
+                raise ToolCallError("Tool arguments are not valid JSON.") from error
         if hasattr(arguments, "model_dump"):
             arguments = arguments.model_dump()
+        if not isinstance(arguments, dict):
+            raise ToolCallError("Tool arguments must be a JSON object.")
         return name, arguments
 
     def execute_tool(
@@ -166,21 +204,14 @@ class Orchestrator(BaseModel):
             tool_name: str,
             arguments: dict
     ):
-        registry = self.tool_domains[domain]
-        if tool_name not in registry:
-            raise LookupError(f"Unknown {domain} tool: {tool_name}")
-
-        tool = registry[tool_name]
-
-        validated_args = self._get_args_model(tool)(**arguments)
-        controller = self.controllers[domain]
-        function = getattr(
-            controller,
-            tool["function"]
+        tool = self._get_tool(domain, tool_name)
+        validated_args = self._validate_tool_arguments(
+            domain,
+            tool_name,
+            arguments,
         )
-
-        return function(
-            **validated_args.model_dump()
+        return tool.handler(
+            **validated_args
         )
 
     def handle_request(self) -> str:
@@ -210,14 +241,21 @@ class Orchestrator(BaseModel):
             return response_text
 
         tool_name, arguments = tool_call
+        validated_arguments = self._validate_tool_arguments(
+            domain,
+            tool_name,
+            arguments,
+        )
 
-        result = self.execute_tool(domain, tool_name, arguments)
+        result = self._get_tool(domain, tool_name).handler(
+            **validated_arguments
+        )
 
         self.last_action = ActionRecord(
             user_input=self.llm_input,
             domain=domain,
             tool_name=tool_name,
-            arguments=arguments,
+            arguments=validated_arguments,
             result=str(result) if result is not None else None,
         )
 
