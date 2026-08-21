@@ -1,9 +1,10 @@
-from spotify import PlaySearchedSongArgs, VolumeControllerArgs, PlayShuffledPlaylistArgs
-from pydantic import BaseModel, Field
+from spotify import PlaySearchedSongArgs, VolumeControllerArgs, PlayShuffledPlaylistArgs, NoArgs
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Callable, ClassVar, Literal
 
-
 class ToolDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     args_model: type[BaseModel]
@@ -67,4 +68,13 @@ def build_spotify_tools(controller: Any) -> dict[str, ToolDefinition]:
             handler=controller.shuffle_playlist,
             uses_chat_history=True,
         ),
+        "skip_track": ToolDefinition(
+            name="skip_track",
+            description=(
+                "Skip the currently playing Spotify track."
+            ),
+            args_model=NoArgs,
+            handler=controller.skip_track,
+            uses_chat_history=False,
+        )
     }

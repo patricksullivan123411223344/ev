@@ -5,10 +5,8 @@ from tools import RouteDecision, ToolDefinition, build_spotify_tools
 from llm_state import ActionRecord, ChatHistory
 import ollama 
 
-
 class ToolCallError(ValueError):
     pass
-
 
 class Orchestrator(BaseModel):
     model: str = Field(default="qwen3:8b", description="The model to use for the LLM")

@@ -2,6 +2,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 from pydantic import BaseModel, ConfigDict, Field
 from dotenv import load_dotenv, find_dotenv
+import time
 import psutil
 import os
 
@@ -33,6 +34,7 @@ class SPTSessionManager():
         return None
 
     def skip_track(self):
+        time.sleep(1)
         self.sp.next_track()
 
     def que_songs(self, songs: list[str]):
@@ -126,6 +128,8 @@ class SPTSessionManager():
 class ToolArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+class NoArgs(ToolArgs):
+    pass
 
 class PlaySearchedSongArgs(ToolArgs):
     track: str = Field(
