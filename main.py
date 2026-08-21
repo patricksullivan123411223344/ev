@@ -1,4 +1,4 @@
-from orchestrator import Orchestrator
+from tool_orchestrator import Orchestrator
 from stt import STTClient
 
 STOP_INSTANCES = [

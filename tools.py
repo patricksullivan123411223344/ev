@@ -4,7 +4,6 @@ from typing import Any, Callable, ClassVar, Literal
 
 class ToolDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     args_model: type[BaseModel]

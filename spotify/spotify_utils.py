@@ -1,9 +1,9 @@
 import spotipy
+from action_models import ActionModel
 from spotipy.oauth2 import SpotifyOAuth
 from pydantic import BaseModel, ConfigDict, Field
 from dotenv import load_dotenv, find_dotenv
 import time
-import psutil
 import os
 
 load_dotenv(find_dotenv())
