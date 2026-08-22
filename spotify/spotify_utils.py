@@ -33,12 +33,6 @@ class SPTSessionManager():
                 return d["id"]
         return None
 
-    def skip_track(self) -> ActionOutcome:
-        self.refresh_devices()
-        device_id = self.desktop_id
-        if device_id is None:
-            return
-
     def _current_track_id(self, playback: dict | None) -> str | None:
         if not playback:
             return None
@@ -58,7 +52,7 @@ class SPTSessionManager():
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             playback = self.sp.current_playback()
-            current_track_id = self._current_track_id()
+            current_track_id = self._current_track_id(playback)
 
             if current_track_id and current_track_id != previous_track_id:
                 return current_track_id
@@ -79,7 +73,7 @@ class SPTSessionManager():
             )
 
         try:
-            before = self.sp.curent_playback()
+            before = self.sp.current_playback()
             before_track_id = self._current_track_id(before)
             self.sp.next_track(device_id=device_id)
 
@@ -99,7 +93,7 @@ class SPTSessionManager():
                 domain="spotify",
                 tool_name="skip_track",
                 facts={"track_id": after_track_id},
-                message_templates="Skipped the current track"
+                message_template="Skipped the current track."
             )
         except spotipy.exceptions.SpotifyException as e:
             return tool_error(

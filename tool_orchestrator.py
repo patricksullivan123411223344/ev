@@ -1,14 +1,17 @@
 import json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from action_models import ActionKernel, ActionOutcome
 from spotify import SPTSessionManager
 from tools import RouteDecision, ToolDefinition, build_spotify_tools
-from llm_state import ActionRecord, ConversationMemory
+from llm_state import ActionStateManager, ConversationMemory
 import ollama 
 
 class ToolCallError(ValueError):
     pass
 
 class Orchestrator(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     model: str = Field(default="qwen3:8b", description="The model to use for the LLM")
     llm_input: str = Field(default="", min_length=1, description="The input text for the LLM from various input methods")
     host: str = Field(default="http://127.0.0.1:11434", description="The host URL for the LLM")
@@ -34,7 +37,8 @@ class Orchestrator(BaseModel):
         default_factory=dict
     )
 
-    last_action: ActionRecord | None = None
+    action_state: ActionStateManager = Field(default_factory=ActionStateManager)
+    action_kernel: ActionKernel | None = None
     chat_history: list[ConversationMemory] = Field(default_factory=list)
     max_chat_messages: int = 20
     history_aware_domains: set = {"spotify"}
@@ -44,6 +48,7 @@ class Orchestrator(BaseModel):
             self.tool_domains = {
                 "spotify": build_spotify_tools(self.controllers["spotify"])
             }
+        self.action_kernel = ActionKernel(self.tool_domains, self.action_state)
         self.validate_tool_domains()
 
     def validate_tool_domains(self) -> None:
@@ -198,22 +203,6 @@ class Orchestrator(BaseModel):
             raise ToolCallError("Tool arguments must be a JSON object.")
         return name, arguments
 
-    def execute_tool(
-            self,
-            domain: str,
-            tool_name: str,
-            arguments: dict
-    ):
-        tool = self._get_tool(domain, tool_name)
-        validated_args = self._validate_tool_arguments(
-            domain,
-            tool_name,
-            arguments,
-        )
-        return tool.handler(
-            **validated_args
-        )
-
     def handle_request(self) -> str:
         self.store_chat_message("user", self.llm_input)
         route = self.choose_domain()
@@ -241,50 +230,39 @@ class Orchestrator(BaseModel):
             return response_text
 
         tool_name, arguments = tool_call
-        validated_arguments = self._validate_tool_arguments(
-            domain,
-            tool_name,
-            arguments,
-        )
+        if self.action_kernel is None:
+            raise RuntimeError("Action kernel has not been initialized.")
 
-        result = self._get_tool(domain, tool_name).handler(
-            **validated_arguments
-        )
-
-        self.last_action = ActionRecord(
-            user_input=self.llm_input,
+        outcome = self.action_kernel.execute(
             domain=domain,
             tool_name=tool_name,
-            arguments=validated_arguments,
-            result=str(result) if result is not None else None,
+            arguments=arguments,
         )
-
-        completed_action = str(
-            result or f"Completed {tool_name}"
-        )
+        action_text = outcome.render()
 
         if route.has_separate_conversation:
             try:
                 conversational_text = self.generate_response(
-                    completed_action=completed_action,
+                    action_outcome=outcome,
                 )
             except Exception:
                 conversational_text = ""
             conversational_text = conversational_text.strip()
             final_text = " ".join(
-                part for part in (completed_action, conversational_text) if part
+                part for part in (action_text, conversational_text) if part
             )
         else:
-            final_text = completed_action
+            final_text = action_text
 
         self.store_chat_message("assistant", final_text)
         return final_text
 
     def get_last_action_context(self) -> str:
-        if self.last_action is None:
+        outcome = self.action_state.last_outcome
+        if outcome is None or outcome.status != "success":
             return "No previous tool action is available."
 
-        return self.last_action.model_dump_json()
+        return outcome.model_dump_json(exclude_none=True)
 
     def store_chat_message(self, role: str, content: str) -> None:
         self.chat_history.append(
@@ -297,7 +275,7 @@ class Orchestrator(BaseModel):
 
     def generate_response(
             self, 
-            completed_action: str | None = None,
+            action_outcome: ActionOutcome | None = None,
     ):
         client = ollama.Client(host=self.host)
 
@@ -314,17 +292,17 @@ class Orchestrator(BaseModel):
         is provided below
         """
 
-        if completed_action is not None:
+        if action_outcome is not None:
                 response_context += f"""
-        The user's requested action has already been completed successfully. 
+        A tool action was attempted. Its structured outcome is authoritative.
 
-        Authoritative completed action result:
-        {completed_action}
+        Authoritative action outcome:
+        {action_outcome.model_dump_json(exclude_none=True)}
 
         Respond only to the separate conversational portion of the user's message.
 
-        Do not restate, paraphrase, reinterpret, replace, or contradict the completed 
-        action. Do not name a song, artist, tool, or result when discussing the action. 
+        Do not claim the action succeeded unless its status is success. Do not restate,
+        reinterpret, replace, or contradict the rendered action result.
 
         If there is no separate conversational content to answer, return an empty string.
         """
