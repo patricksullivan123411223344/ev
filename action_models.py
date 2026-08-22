@@ -43,3 +43,37 @@ class ActionOutcome(BaseModel):
 
     def render(self):
         return self.message_template.format(**self.facts)
+
+def tool_error(
+        domain: str,
+        tool_name: str,
+        error: str,
+        arguments: dict | None = None,
+        facts: dict | None = None,
+        message_templates: str = "I couldn't complete that action"
+    ) -> ActionOutcome:
+    return ActionOutcome(
+        status="failed",
+        domain=domain,
+        tool_name=tool_name,
+        arguments=arguments or {},
+        facts=facts or {},
+        message_templates=message_templates,
+        error=error
+    )
+
+def tool_success(
+        domain: str,
+        tool_name: str,
+        arguments: dict | None = None,
+        facts: dict | None = None,
+        message_templates: str = "I successfully executed the action."
+) -> ActionOutcome:
+    return ActionOutcome(
+        status="success",
+        domain=domain,
+        tool_name=tool_name,
+        arguments=arguments or {},
+        facts=facts or {},
+        message_templates=message_templates
+    )

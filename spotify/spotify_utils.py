@@ -33,9 +33,86 @@ class SPTSessionManager():
                 return d["id"]
         return None
 
-    def skip_track(self):
-        time.sleep(1)
-        self.sp.next_track()
+    def skip_track(self) -> ActionOutcome:
+        self.refresh_devices()
+        device_id = self.desktop_id
+        if device_id is None:
+            return
+
+    def _current_track_id(self, playback: dict | None) -> str | None:
+        if not playback:
+            return None
+
+        item = playback.get("item")
+        if not item:
+            return None
+
+        return item.get("id")
+
+    def _wait_for_track_change(
+        self,
+        previous_track_id: str | None,
+        timeout: float = 4.0,
+        poll_interval: float = 0.25,
+    ) -> str | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            playback = self.sp.current_playback()
+            current_track_id = self._current_track_id()
+
+            if current_track_id and current_track_id != previous_track_id:
+                return current_track_id
+
+            time.sleep(poll_interval)
+
+        return None
+
+    def skip_track(self) -> ActionOutcome:
+        self.refresh_devices()
+        device_id = self.desktop_id
+
+        if device_id is None:
+            return tool_error(
+                domain="spotify",
+                tool_name="skip_track",
+                error="No spotify desktop device is available."
+            )
+
+        try:
+            before = self.sp.curent_playback()
+            before_track_id = self._current_track_id(before)
+            self.sp.next_track(device_id=device_id)
+
+            after_track_id = self._wait_for_track_change(
+                previous_track_id=before_track_id,
+                timeout=4.0
+            )
+
+            if after_track_id is None:
+                return tool_error(
+                    domain="spotify",
+                    tool_name="skip_track",
+                    error="Spotify accepted the request, but playback did not advance."
+                )
+
+            return tool_success(
+                domain="spotify",
+                tool_name="skip_track",
+                facts={"track_id": after_track_id},
+                message_templates="Skipped the current track"
+            )
+        except spotipy.exceptions.SpotifyException as e:
+            return tool_error(
+                domain="spotify",
+                tool_name="skip_track",
+                error=f"Spotify rejected the skip request: {e}"
+            )
+        except Exception as e:
+            return tool_error(
+                domain="spotify",
+                tool_name="skip_track",
+                error=f"Could not verify the track skip: {e}"
+            )
 
     def que_songs(self, songs: list[str]):
         device_id = self.desktop_id
